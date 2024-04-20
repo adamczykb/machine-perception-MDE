@@ -12,3 +12,4 @@ class ProjectConfig:
     dataset_achive_train_path:str=''
     dataset_achive_test_path:str=''
     verbose:bool=True
+    model_name:str='model_name'

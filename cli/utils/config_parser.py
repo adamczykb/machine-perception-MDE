@@ -20,4 +20,5 @@ class ConfigParser:
             pc.dataset_achive_train_path = yml_config["data"]["dataset"]["archive"]['train_path']
             pc.dataset_achive_test_path = yml_config["data"]["dataset"]["archive"]['test_path']
             pc.verbose = yml_config["verbose"]
+            pc.model_name=yml_config['model_name']
             return pc

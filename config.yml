@@ -1,4 +1,5 @@
 verbose: True
+model_name: monodepth2
 data:
   url: 'http://bartekadamczyk.eu/share/data_depth_annotated.zip'
   dataset:
