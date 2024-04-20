@@ -1,0 +1,12 @@
+verbose: True
+data:
+  url: 'http://bartekadamczyk.eu/share/data_depth_annotated.zip'
+  dataset:
+    directory_train: '/app/data/train'
+    directory_test: '/app/data/test'
+    archive:
+      name: data_depth_annotated
+      ext: zip
+      store_path: /app/data/archive
+      train_path: train
+      test_path: val
