@@ -18,7 +18,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from cli.config import ProjectConfig
 from cli.utils.config_parser import ConfigParser
-from data.mono_dataset import MonoDataset
+from data.mono_dataset import KITTIRAWDataset, MonoDataset
 from network import resnet_encoder,depth_decoder,pose_decoder
 import json
 
@@ -102,7 +102,7 @@ class Trainer:
 
         # data
 
-        
+        self.dataset= KITTIRAWDataset
 
         fpath = os.path.join(os.path.dirname(__file__), "splits", self.opt.split, "{}_files.txt")
         
@@ -112,13 +112,13 @@ class Trainer:
 
         num_train_samples = len(train_filenames)
         self.num_total_steps = num_train_samples // self.opt.batch_size * self.opt.num_epochs
-        train_dataset = MonoDataset(
+        train_dataset = self.dataset(
             self.opt.data_path, train_filenames, self.opt.height, self.opt.width,
             self.opt.frame_ids, 4, is_train=True, img_ext=img_ext)
         self.train_loader = DataLoader(
             train_dataset, self.opt.batch_size, True,
             num_workers=self.opt.num_workers, pin_memory=True, drop_last=True)
-        val_dataset = MonoDataset(
+        val_dataset = self.dataset(
             self.opt.data_path, val_filenames, self.opt.height, self.opt.width,
             self.opt.frame_ids, 4, is_train=False, img_ext=img_ext)
         self.val_loader = DataLoader(

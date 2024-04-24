@@ -3,7 +3,8 @@ from dataclasses import dataclass
 
 @dataclass
 class ProjectConfig:
-    dataset_url: str=''
+    dataset_config: str=''
+    dataset_directory:str=''
     dataset_directory_train: str=''
     dataset_directory_test: str=''
     dataset_archive_ext: str=''
