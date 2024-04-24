@@ -9,7 +9,7 @@ class ConfigParser:
         with open(path,'rb') as stream:
             pc = ProjectConfig()
             yml_config = yaml.safe_load(stream)
-            pc.dataset_url = yml_config["data"]["url"]
+            pc.dataset_config = yml_config["data"]["config"]
             pc.dataset_directory_train = yml_config["data"]["dataset"][
                 "directory_train"
             ]
@@ -19,5 +19,7 @@ class ConfigParser:
             pc.dataset_store_achive_path = yml_config["data"]["dataset"]["archive"]['store_path']
             pc.dataset_achive_train_path = yml_config["data"]["dataset"]["archive"]['train_path']
             pc.dataset_achive_test_path = yml_config["data"]["dataset"]["archive"]['test_path']
+            pc.dataset_directory = yml_config["data"]["dataset"]["directory"]
             pc.verbose = yml_config["verbose"]
+            pc.model_name=yml_config['model_name']
             return pc

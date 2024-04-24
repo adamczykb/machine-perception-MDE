@@ -1,7 +1,9 @@
 verbose: True
+model_name: monodepth2
 data:
-  url: 'http://bartekadamczyk.eu/share/data_depth_annotated.zip'
+  config: '/app/kiti.dataset'
   dataset:
+    directory: '/app/data'
     directory_train: '/app/data/train'
     directory_test: '/app/data/test'
     archive:
