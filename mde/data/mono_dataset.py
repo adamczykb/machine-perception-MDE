@@ -1,66 +1,65 @@
-# Copyright Niantic 2019. Patent Pending. All rights reserved.
-#
-# This software is licensed under the terms of the Monodepth2 licence
-# which allows for non-commercial use only, the full terms of which are made
-# available in the LICENSE file.
-
-from __future__ import absolute_import, division, print_function
-
+import glob
 import os
 import random
-import PIL
 import numpy as np
-from PIL import Image  # using pillow-simd for increased speed
 
+import skimage
 import torch
 import torch.utils.data as data
 from torchvision import transforms
-
-import os
-import skimage.transform
-import numpy as np
 import PIL.Image as pil
 
-from utils.kitti import generate_depth_map
-
-def pil_loader(path):
-    # open path as file to avoid ResourceWarning
-    # (https://github.com/python-pillow/Pillow/issues/835)
-    with open(path, 'rb') as f:
-        with Image.open(f) as img:
-            return img.convert('RGB')
+from mde.data.utils import generate_depth_map, pil_loader
 
 
 class MonoDataset(data.Dataset):
     """Superclass for monocular dataloaders
-
-    Args:
-        data_path
-        filenames
-        height
-        width
-        frame_idxs
-        num_scales
-        is_train
-        img_ext
+     data_path: path to day drive
+    height
+    width
+    frame_idxs: how many frames upward
+    num_scales,
+    drives=[9], which drives to load 
+    is_train=False,
+    img_ext=".jpg",
+    
     """
-    def __init__(self,
-                 data_path,
-                 filenames,
-                 height,
-                 width,
-                 frame_idxs,
-                 num_scales,
-                 is_train=False,
-                 img_ext='.jpg'):
+
+    def __init__(
+        self,
+        data_path,
+        height,
+        width,
+        frame_idxs,
+        num_scales,
+        drives=[9],
+        is_train=False,
+        img_ext=".jpg",
+    ):
         super(MonoDataset, self).__init__()
 
         self.data_path = data_path
-        self.filenames = filenames
+        self.drive_directories = [f"{data_path.split('/')[-1]}_drive_{'{:04d}'.format(drive)}_sync" for drive in drives]
+        self.filenames=dict()
+        self.frames=[]
+        for drive_dir in self.drive_directories:
+            self.filenames[drive_dir]=dict()
+            for side in [2,3]:
+                self.filenames[drive_dir][side]= sorted(
+                    glob.glob(
+                        os.path.join(
+                            data_path,
+                            drive_dir,
+                            f'image_0{side}','data','*.jpg'
+                            )),
+                            key=lambda x: int(x.split('/')[-1].split('.')[0]
+                                )
+                            )
+                self.frames.extend(self.filenames[drive_dir][side]) 
         self.height = height
         self.width = width
         self.num_scales = num_scales
-        self.interp = Image.ANTIALIAS
+        self.interp = pil.LANCZOS
 
         self.frame_idxs = frame_idxs
 
@@ -78,7 +77,8 @@ class MonoDataset(data.Dataset):
             self.saturation = (0.8, 1.2)
             self.hue = (-0.1, 0.1)
             transforms.ColorJitter.get_params(
-                self.brightness, self.contrast, self.saturation, self.hue)
+                self.brightness, self.contrast, self.saturation, self.hue
+            )
         except TypeError:
             self.brightness = 0.2
             self.contrast = 0.2
@@ -87,9 +87,10 @@ class MonoDataset(data.Dataset):
 
         self.resize = {}
         for i in range(self.num_scales):
-            s = 2 ** i
-            self.resize[i] = transforms.Resize((self.height // s, self.width // s),
-                                               interpolation=self.interp)
+            s = 2**i
+            self.resize[i] = transforms.Resize(
+                (self.height // s, self.width // s), interpolation=self.interp
+            )
 
         self.load_depth = self.check_depth()
 
@@ -146,49 +147,44 @@ class MonoDataset(data.Dataset):
         do_color_aug = self.is_train and random.random() > 0.5
         do_flip = self.is_train and random.random() > 0.5
 
-        line = self.filenames[index].split()
-        folder = line[0]
+        path = self.frames[index].split('/')
+        folder = path[-4]
 
-        if len(line) == 3:
-            frame_index = int(line[1])
+        if len(path) == 3:
+            frame_index = int(path[-1].replace('.jpg',''))
         else:
             frame_index = 0
 
-        if len(line) == 3:
-            side = line[2]
-        else:
-            side = None
-
+        side = str(int(path[-3].split('_')[-1]))
         for i in self.frame_idxs:
-            if i == "s":
-                other_side = {"r": "l", "l": "r"}[side]
-                inputs[("color", i, -1)] = self.get_color(folder, frame_index, other_side, do_flip)
-            else:
-                inputs[("color", i, -1)] = self.get_color(folder, frame_index + i, side, do_flip)
+            inputs[("color", frame_index+i, -1)] = self.get_color(
+                index,do_flip
+            )
 
         # adjusting intrinsics to match each scale in the pyramid
         for scale in range(self.num_scales):
             K = self.K.copy()
 
-            K[0, :] *= self.width // (2 ** scale)
-            K[1, :] *= self.height // (2 ** scale)
+            K[0, :] *= self.width // (2**scale)
+            K[1, :] *= self.height // (2**scale)
 
             inv_K = np.linalg.pinv(K)
 
-            inputs[("K", scale)] = torch.from_numpy(K)
-            inputs[("inv_K", scale)] = torch.from_numpy(inv_K)
+            inputs[("K", scale)] = torch.Tensor(K)
+            inputs[("inv_K", scale)] = torch.Tensor(inv_K)
 
         if do_color_aug:
             color_aug = transforms.ColorJitter.get_params(
-                self.brightness, self.contrast, self.saturation, self.hue)
+                self.brightness, self.contrast, self.saturation, self.hue
+            )
         else:
-            color_aug = (lambda x: x)
+            color_aug = lambda x: x
 
         self.preprocess(inputs, color_aug)
 
         for i in self.frame_idxs:
-            del inputs[("color", i, -1)]
-            del inputs[("color_aug", i, -1)]
+            del inputs[("color", frame_index+i, -1)]
+            del inputs[("color_aug", frame_index+i, -1)]
 
         if self.load_depth:
             depth_gt = self.get_depth(folder, frame_index, side, do_flip)
@@ -205,7 +201,7 @@ class MonoDataset(data.Dataset):
 
         return inputs
 
-    def get_color(self, folder, frame_index, side, do_flip):
+    def get_color(self, index):
         raise NotImplementedError
 
     def check_depth(self):
@@ -213,15 +209,11 @@ class MonoDataset(data.Dataset):
 
     def get_depth(self, folder, frame_index, side, do_flip):
         raise NotImplementedError
-    
-
-
-
 
 
 class KITTIDataset(MonoDataset):
-    """Superclass for different types of KITTI dataset loaders
-    """
+    """Superclass for different types of KITTI dataset loaders"""
+
     def __init__(self, *args, **kwargs):
         super(KITTIDataset, self).__init__(*args, **kwargs)
 
@@ -230,28 +222,29 @@ class KITTIDataset(MonoDataset):
         # by 1 / image_height. Monodepth2 assumes a principal point to be exactly centered.
         # If your principal point is far from the center you might need to disable the horizontal
         # flip augmentation.
-        self.K = np.array([[0.58, 0, 0.5, 0],
-                           [0, 1.92, 0.5, 0],
-                           [0, 0, 1, 0],
-                           [0, 0, 0, 1]], dtype=np.float32)
+        self.K = np.array(
+            [[0.58, 0, 0.5, 0], [0, 1.92, 0.5, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+            dtype=np.float32,
+        )
 
         self.full_res_shape = (1242, 375)
         self.side_map = {"2": 2, "3": 3, "l": 2, "r": 3}
 
     def check_depth(self):
-        line = self.filenames[0].split()
-        scene_name = line[0]
-        frame_index = int(line[1])
+        path = self.frames[0].split('/')
+        scene_name = path[-4]
+        frame_index = int(path[-1].replace('.jpg',''))
 
         velo_filename = os.path.join(
             self.data_path,
             scene_name,
-            "velodyne_points/data/{:010d}.bin".format(int(frame_index)))
+            "velodyne_points/data/{:010d}.bin".format(int(frame_index)),
+        )
 
         return os.path.isfile(velo_filename)
 
-    def get_color(self, folder, frame_index, side, do_flip):
-        color = self.loader(self.get_image_path(folder, frame_index, side))
+    def get_color(self, index,do_flip):
+        color = self.loader(self.frames[index])
 
         if do_flip:
             color = color.transpose(pil.FLIP_LEFT_RIGHT)
@@ -260,28 +253,31 @@ class KITTIDataset(MonoDataset):
 
 
 class KITTIRAWDataset(KITTIDataset):
-    """KITTI dataset which loads the original velodyne depth maps for ground truth
-    """
+    """KITTI dataset which loads the original velodyne depth maps for ground truth"""
+
     def __init__(self, *args, **kwargs):
         super(KITTIRAWDataset, self).__init__(*args, **kwargs)
 
     def get_image_path(self, folder, frame_index, side):
-        f_str = "{:010d}{}".format(frame_index, self.img_ext)
-        image_path = os.path.join(
-            self.data_path, folder, "image_0{}/data".format(self.side_map[side]), f_str)
-        return image_path
+        return self.filenames[folder][side][frame_index]
 
     def get_depth(self, folder, frame_index, side, do_flip):
-        calib_path = os.path.join(self.data_path, folder.split("/")[0])
+        calib_path = os.path.join(self.data_path)
 
         velo_filename = os.path.join(
             self.data_path,
             folder,
-            "velodyne_points/data/{:010d}.bin".format(int(frame_index)))
+            "velodyne_points/data/{:010d}.bin".format(int(frame_index)),
+        )
 
         depth_gt = generate_depth_map(calib_path, velo_filename, self.side_map[side])
         depth_gt = skimage.transform.resize(
-            depth_gt, self.full_res_shape[::-1], order=0, preserve_range=True, mode='constant')
+            depth_gt,
+            self.full_res_shape[::-1],
+            order=0,
+            preserve_range=True,
+            mode="constant",
+        )
 
         if do_flip:
             depth_gt = np.fliplr(depth_gt)
@@ -289,50 +285,50 @@ class KITTIRAWDataset(KITTIDataset):
         return depth_gt
 
 
-class KITTIOdomDataset(KITTIDataset):
-    """KITTI dataset for odometry training and testing
-    """
-    def __init__(self, *args, **kwargs):
-        super(KITTIOdomDataset, self).__init__(*args, **kwargs)
+# class KITTIOdomDataset(KITTIDataset):
+#     """KITTI dataset for odometry training and testing"""
 
-    def get_image_path(self, folder, frame_index, side):
-        f_str = "{:06d}{}".format(frame_index, self.img_ext)
-        image_path = os.path.join(
-            self.data_path,
-            "sequences/{:02d}".format(int(folder)),
-            "image_{}".format(self.side_map[side]),
-            f_str)
-        return image_path
+#     def __init__(self, *args, **kwargs):
+#         super(KITTIOdomDataset, self).__init__(*args, **kwargs)
+
+#     def get_image_path(self, folder, frame_index, side):
+#         f_str = "{:06d}{}".format(frame_index, self.img_ext)
+#         image_path = os.path.join(
+#             self.data_path,
+#             "sequences/{:02d}".format(int(folder)),
+#             "image_{}".format(self.side_map[side]),
+#             f_str,
+#         )
+#         return image_path
 
 
-class KITTIDepthDataset(KITTIDataset):
-    """KITTI dataset which uses the updated ground truth depth maps
-    """
-    def __init__(self, *args, **kwargs):
-        super(KITTIDepthDataset, self).__init__(*args, **kwargs)
+# class KITTIDepthDataset(KITTIDataset):
+#     """KITTI dataset which uses the updated ground truth depth maps"""
 
-    def get_image_path(self, folder, frame_index, side):
-        f_str = "{:010d}{}".format(frame_index, self.img_ext)
-        image_path = os.path.join(
-            self.data_path,
-            folder,
-            "image_0{}/data".format(self.side_map[side]),
-            f_str)
-        return image_path
+#     def __init__(self, *args, **kwargs):
+#         super(KITTIDepthDataset, self).__init__(*args, **kwargs)
 
-    def get_depth(self, folder, frame_index, side, do_flip):
-        f_str = "{:010d}.png".format(frame_index)
-        depth_path = os.path.join(
-            self.data_path,
-            folder,
-            "proj_depth/groundtruth/image_0{}".format(self.side_map[side]),
-            f_str)
+#     def get_image_path(self, folder, frame_index, side):
+#         f_str = "{:010d}{}".format(frame_index, self.img_ext)
+#         image_path = os.path.join(
+#             self.data_path, folder, "image_0{}/data".format(self.side_map[side]), f_str
+#         )
+#         return image_path
 
-        depth_gt = pil.open(depth_path)
-        depth_gt = depth_gt.resize(self.full_res_shape, pil.NEAREST)
-        depth_gt = np.array(depth_gt).astype(np.float32) / 256
+#     def get_depth(self, folder, frame_index, side, do_flip):
+#         f_str = "{:010d}.png".format(frame_index)
+#         depth_path = os.path.join(
+#             self.data_path,
+#             folder,
+#             "proj_depth/groundtruth/image_0{}".format(self.side_map[side]),
+#             f_str,
+#         )
 
-        if do_flip:
-            depth_gt = np.fliplr(depth_gt)
+#         depth_gt = pil.open(depth_path)
+#         depth_gt = depth_gt.resize(self.full_res_shape, pil.NEAREST)
+#         depth_gt = np.array(depth_gt).astype(np.float32) / 256
 
-        return depth_gt
+#         if do_flip:
+#             depth_gt = np.fliplr(depth_gt)
+
+#         return depth_gt
