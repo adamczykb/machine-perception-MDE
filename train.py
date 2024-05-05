@@ -7,10 +7,12 @@
 from __future__ import absolute_import, division, print_function
 import os
 import sys
-
+from ignite.metrics import *
 import numpy as np
 import time
-
+from glob import glob
+import math
+import random
 import torch
 from  torch import nn
 import torch.nn.functional as F
@@ -21,7 +23,7 @@ from cli.utils.config_parser import ConfigParser
 from data.mono_dataset import KITTIRAWDataset, MonoDataset
 from network import resnet_encoder,depth_decoder,pose_decoder
 import json
-
+from torchvision import models
 from network.monodepth2 import SSIM, BackprojectDepth, Project3D, compute_depth_errors, disp_to_depth, get_smooth_loss, transformation_from_parameters
 
 class Trainer:
@@ -46,39 +48,20 @@ class Trainer:
 
         if self.opt.use_stereo:
             self.opt.frame_ids.append("s")
-
-        self.models["encoder"] = resnet_encoder.ResnetEncoder(
-            self.opt.num_layers, self.opt.weights_init == "pretrained").to(self.device)
+        
+        model = models.resnet50(pretrained=True)
+        layers = (list(model.children())[:-1])
+        layers.append(nn.Flatten())
+        resnet_model = nn.Sequential(*layers)
+        self.models["encoder"] = resnet_model.to(self.device)
       
-        self.parameters_to_train += list(self.models["encoder"].parameters())
-
         self.models["depth"] = depth_decoder.DepthDecoder(
-            self.models["encoder"].num_ch_enc, self.opt.scales).to(self.device)
+            , self.opt.scales).to(self.device)
         self.parameters_to_train += list(self.models["depth"].parameters())
 
-        if self.opt.pose_model_type == "separate_resnet":
-            self.models["pose_encoder"] = resnet_encoder.ResnetEncoder(
-                self.opt.num_layers,
-                self.opt.weights_init == "pretrained",
-                num_input_images=self.num_pose_frames)
+        self.models["pose"] = pose_decoder.PoseCNN(
+                self.num_input_frames if self.opt.pose_model_input == "all" else 2).to(self.device)
 
-            self.models["pose_encoder"].to(self.device)
-            self.parameters_to_train += list(self.models["pose_encoder"].parameters())
-
-            self.models["pose"] = pose_decoder.PoseDecoder(
-                self.models["pose_encoder"].num_ch_enc,
-                num_input_features=1,
-                num_frames_to_predict_for=2)
-
-        elif self.opt.pose_model_type == "shared":
-            self.models["pose"] = pose_decoder.PoseDecoder(
-                self.models["encoder"].num_ch_enc, self.num_pose_frames)
-
-        elif self.opt.pose_model_type == "posecnn":
-            self.models["pose"] = pose_decoder.PoseCNN(
-                self.num_input_frames if self.opt.pose_model_input == "all" else 2)
-
-        self.models["pose"].to(self.device)
         self.parameters_to_train += list(self.models["pose"].parameters())
 
         if self.opt.predictive_mask:
@@ -101,26 +84,31 @@ class Trainer:
 
 
         # data
+        torch.manual_seed(0)
 
+        paths = glob('/app/data/data_depth_annotated/2011_09_26/*/')
+        tracks = set([int(i.split('/')[-2].split('_')[-2]) for i in paths])
+        dataset_len=len(tracks)
+        train = random.choices(list(tracks), k=math.ceil((dataset_len/10)*8))
+        tracks = tracks-set(train)
+        test = random.choices(list(tracks), k=dataset_len//10)
+        val = tracks-set(test)
         self.dataset= KITTIRAWDataset
 
-        fpath = os.path.join(os.path.dirname(__file__), "splits", self.opt.split, "{}_files.txt")
         
-        # train_filenames = readlines(fpath.format("train"))
-        # val_filenames = readlines(fpath.format("val"))
         img_ext = '.png' if self.opt.png else '.jpg'
 
-        num_train_samples = len(train_filenames)
-        self.num_total_steps = num_train_samples // self.opt.batch_size * self.opt.num_epochs
+        # num_train_samples = len(train_filenames)
+        # self.num_total_steps = num_train_samples // self.opt.batch_size * self.opt.num_epochs
         train_dataset = self.dataset(
-            self.opt.data_path, train_filenames, self.opt.height, self.opt.width,
-            self.opt.frame_ids, 4, is_train=True, img_ext=img_ext)
+            '/app/data/data_depth_annotated/2011_09_26', self.opt.height, self.opt.width,
+            [0,1], 4, is_train=True, img_ext=img_ext,drives=list(train))
         self.train_loader = DataLoader(
             train_dataset, self.opt.batch_size, True,
             num_workers=self.opt.num_workers, pin_memory=True, drop_last=True)
         val_dataset = self.dataset(
-            self.opt.data_path, val_filenames, self.opt.height, self.opt.width,
-            self.opt.frame_ids, 4, is_train=False, img_ext=img_ext)
+            '/app/data/data_depth_annotated/2011_09_26', self.opt.height, self.opt.width,
+            [0,1], 4, is_train=False, img_ext=img_ext,drives=list(val))
         self.val_loader = DataLoader(
             val_dataset, self.opt.batch_size, True,
             num_workers=self.opt.num_workers, pin_memory=True, drop_last=True)
@@ -128,7 +116,7 @@ class Trainer:
 
 
         if not self.opt.no_ssim:
-            self.ssim = SSIM()
+            self.ssim = SSIM(data_range=1.0)
             self.ssim.to(self.device)
 
         self.backproject_depth = {}

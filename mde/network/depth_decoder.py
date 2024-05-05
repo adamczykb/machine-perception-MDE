@@ -25,6 +25,7 @@ class DepthDecoder(nn.Module):
 
         self.num_ch_enc = num_ch_enc
         self.num_ch_dec = np.array([16, 32, 64, 128, 256])
+        # nn.ConvTranspose2d(16, 16, 3, stride=2, padding=1)
 
         # decoder
         self.convs = OrderedDict()
