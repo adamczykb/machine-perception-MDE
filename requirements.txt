@@ -3,3 +3,4 @@ tqdm~=4.65.0
 requests==2.31.0
 scikit-image==0.23.2
 matplotlib==3.8.4
+lightning==2.2.4

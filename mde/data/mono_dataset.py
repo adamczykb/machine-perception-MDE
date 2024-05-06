@@ -8,7 +8,7 @@ import torch
 import torch.utils.data as data
 from torchvision import transforms
 import PIL.Image as pil
-
+from PIL import Image
 from mde.data.utils import generate_depth_map, pil_loader
 
 
@@ -157,9 +157,11 @@ class MonoDataset(data.Dataset):
 
         side = str(int(path[-3].split('_')[-1]))
         for i in self.frame_idxs:
+            
             inputs[("color", frame_index+i, -1)] = self.get_color(
                 index,do_flip
             )
+            
 
         # adjusting intrinsics to match each scale in the pyramid
         for scale in range(self.num_scales):
@@ -199,7 +201,7 @@ class MonoDataset(data.Dataset):
 
             inputs["stereo_T"] = torch.from_numpy(stereo_T)
 
-        return inputs
+        return inputs[("color", 0, 0)],inputs["depth_gt"]
 
     def get_color(self, index):
         raise NotImplementedError
@@ -227,7 +229,7 @@ class KITTIDataset(MonoDataset):
             dtype=np.float32,
         )
 
-        self.full_res_shape = (1242, 375)
+        self.full_res_shape = (331, 100)
         self.side_map = {"2": 2, "3": 3, "l": 2, "r": 3}
 
     def check_depth(self):
@@ -245,7 +247,7 @@ class KITTIDataset(MonoDataset):
 
     def get_color(self, index,do_flip):
         color = self.loader(self.frames[index])
-
+        color=color.resize(self.full_res_shape)
         if do_flip:
             color = color.transpose(pil.FLIP_LEFT_RIGHT)
 
