@@ -17,11 +17,20 @@ class MDE(L.LightningModule):
         # it is independent of forward
         x, y = batch
         z = self.mde_unet(x)
+        loss = nn.functional.mse_loss(z, y) 
+        # Logging to TensorBoard (if installed) by default
+        self.log("train_loss", loss,prog_bar=True)
+        return loss
+    def validation_step(self, batch, batch_idx):
+        # training_step defines the train loop.
+        # it is independent of forward
+        x, y = batch
+        z = self.mde_unet(x)
         loss = nn.functional.mse_loss(z, y)
         # Logging to TensorBoard (if installed) by default
-        self.log("train_loss", loss)
+        self.log("val_loss", loss,prog_bar=True)
         return loss
-
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=1e-3)
         return optimizer
+    

@@ -37,7 +37,10 @@ class MonoDataset(data.Dataset):
         img_ext=".jpg",
     ):
         super(MonoDataset, self).__init__()
-
+        self.normalise = transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+        )
         self.data_path = data_path
         self.drive_directories = [f"{data_path.split('/')[-1]}_drive_{'{:04d}'.format(drive)}_sync" for drive in drives]
         self.filenames=dict()
@@ -94,7 +97,7 @@ class MonoDataset(data.Dataset):
 
         self.load_depth = self.check_depth()
 
-    def preprocess(self, inputs, color_aug):
+    def preprocess(self, inputs,color_proc, color_aug):
         """Resize colour images to the required scales and augment if required
 
         We create the color_aug object in advance and apply the same augmentation to all
@@ -112,8 +115,9 @@ class MonoDataset(data.Dataset):
             f = inputs[k]
             if "color" in k:
                 n, im, i = k
-                inputs[(n, im, i)] = self.to_tensor(f)
-                inputs[(n + "_aug", im, i)] = self.to_tensor(color_aug(f))
+                inputs[(n, im, i)] = color_proc(f)
+                inputs[(n + "_aug", im, i)] = color_aug(f)
+                # inputs[(n + "_aug", im, i)] = self.normalise(torch.as_tensor(np.array(color_aug(f),dtype=float)))
 
     def __len__(self):
         return len(self.filenames)
@@ -175,14 +179,24 @@ class MonoDataset(data.Dataset):
             inputs[("K", scale)] = torch.Tensor(K)
             inputs[("inv_K", scale)] = torch.Tensor(inv_K)
 
-        if do_color_aug:
-            color_aug = transforms.ColorJitter.get_params(
-                self.brightness, self.contrast, self.saturation, self.hue
-            )
-        else:
-            color_aug = lambda x: x
+        # if do_color_aug:
+        color_proc=transforms.Compose([
+            transforms.PILToTensor(),
+            transforms.ConvertImageDtype(torch.float),
 
-        self.preprocess(inputs, color_aug)
+        ])
+        color_aug= transforms.Compose([
+            transforms.PILToTensor(),
+            transforms.ColorJitter(self.brightness, self.contrast, self.saturation, self.hue),
+            transforms.ConvertImageDtype(torch.float),
+
+        ])
+
+       
+        # else:
+        #     color_aug = lambda x: x
+
+        self.preprocess(inputs,color_proc, color_aug)
 
         for i in self.frame_idxs:
             del inputs[("color", frame_index+i, -1)]
@@ -200,8 +214,10 @@ class MonoDataset(data.Dataset):
             stereo_T[0, 3] = side_sign * baseline_sign * 0.1
 
             inputs["stereo_T"] = torch.from_numpy(stereo_T)
-
-        return inputs[("color", 0, 0)],inputs["depth_gt"]
+        if self.is_train:
+            return inputs[("color_aug", 0, 0)],inputs["depth_gt"]
+        else:
+            return inputs[("color", 0, 0)],inputs["depth_gt"]
 
     def get_color(self, index):
         raise NotImplementedError
@@ -229,7 +245,7 @@ class KITTIDataset(MonoDataset):
             dtype=np.float32,
         )
 
-        self.full_res_shape = (331, 100)
+        self.full_res_shape = (332, 100)
         self.side_map = {"2": 2, "3": 3, "l": 2, "r": 3}
 
     def check_depth(self):

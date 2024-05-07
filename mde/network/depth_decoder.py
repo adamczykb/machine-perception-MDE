@@ -67,6 +67,8 @@ class MDEModel(nn.Module):
         self.up3=Up(128,64)
         self.up = nn.ConvTranspose2d(64, 1, kernel_size=2, stride=2)
     def forward(self, x):
+        # x=x.permute(0, 3,1, 2).float()
+        x=x.float()
         x = self.encoder.conv1(x)
         x = self.encoder.bn1(x)
         x = self.encoder.relu(x)
@@ -81,6 +83,7 @@ class MDEModel(nn.Module):
         x5 = self.encoder.layer4(x4)
         # x = F.interpolate(x5, scale_factor=2, mode="nearest")
         # x=self.up(x5)
+        x5=self.encoder.avgpool(x5)
         x=self.up1(x5,x4)
         x=self.up2(x,x3)
         x=self.up3(x,x2)
