@@ -4,7 +4,6 @@
 # which allows for non-commercial use only, the full terms of which are made
 # available in the LICENSE file.
 
-from __future__ import absolute_import, division, print_function
 
 import torch
 import torch.nn as nn
@@ -51,6 +50,8 @@ class PoseCNN(nn.Module):
         translation = out[..., 3:]
 
         return axisangle, translation
+    
+
 class PoseDecoder(nn.Module):
     def __init__(self, num_ch_enc, num_input_features, num_frames_to_predict_for=None, stride=1):
         super(PoseDecoder, self).__init__()

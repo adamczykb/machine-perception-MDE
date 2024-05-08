@@ -66,6 +66,9 @@ class MDEModel(nn.Module):
         self.up2=Up(256,128)
         self.up3=Up(128,64)
         self.up = nn.ConvTranspose2d(64, 1, kernel_size=2, stride=2)
+
+    
+    
     def forward(self, x):
         # x=x.permute(0, 3,1, 2).float()
         x=x.float()
