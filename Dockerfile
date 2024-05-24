@@ -1,10 +1,10 @@
-FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
+FROM nvidia/cuda:12.3.0-runtime-ubuntu22.04
 
 RUN apt-get update -y && apt-get upgrade -y
 
 RUN apt-get install -y python3 python3-pip wget parallel imagemagick ffmpeg libsm6 libxext6 
 
-RUN pip3 install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu118
+RUN pip3 install torch torchvision
 
 COPY . /app
 WORKDIR /app

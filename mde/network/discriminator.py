@@ -11,22 +11,29 @@ import torch.nn.functional as F
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
-        seq_list=[]
-        
-        seq_list.append(Conv2d( 4,8, kernel_size=3,stride=1,bias=False))
-        # seq_list.append(BatchNorm2d(8))
-        seq_list.append(nn.GELU())
-        for i in range(1,8):
-            if i!=7:
-                seq_list.append(Conv2d( i*8,(i+1)*8, kernel_size=3,stride=1,bias=False))
-                seq_list.append(BatchNorm2d((i+1)*8))
-                seq_list.append(nn.GELU())
-            else:
-                seq_list.append(Conv2d( i*8,i*8, kernel_size=3,stride=1,bias=False))
-                seq_list.append(nn.Sigmoid())
+       
 
-        self.module = nn.Sequential(*seq_list)
+        self.module=nn.Sequential(OrderedDict([
+            ('conv1', nn.Conv2d( 4,32, kernel_size=3,stride=1,bias=False)),
+            ('bnom1',  nn.BatchNorm2d(32)),
+
+          ('relu1',  nn.GELU()),
+           ('conv2',  nn.Conv2d( 32,64, kernel_size=4,stride=1,bias=False)),
+            ('bnom2',  nn.BatchNorm2d(64)),
+          ('gelu2',  nn.GELU()),
+           ('conv3',  nn.Conv2d( 64,128, kernel_size=4,stride=2,bias=False)),
+            ('bnom3',   nn.BatchNorm2d(128)),
+          ('gelu3',  nn.GELU()),
+           ('conv4',  nn.Conv2d( 128,256, kernel_size=4,stride=1,bias=False)),
+            ('bnom4',   nn.BatchNorm2d(256)),
+          ('gelu4',   nn.GELU()),
+           ('conv5',  nn.Conv2d( 256,512, kernel_size=3,stride=1,bias=False)),
+          ('sigmoid',  nn.Sigmoid())
+        ]))
+
+
 
     def forward(self, x):
         y_hat = self.module(x)
+        
         return y_hat

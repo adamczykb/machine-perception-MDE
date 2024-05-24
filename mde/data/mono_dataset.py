@@ -1,4 +1,5 @@
 import glob
+from multiprocessing import Pool
 import os
 import random
 import numpy as np
@@ -10,7 +11,7 @@ from torchvision import transforms
 import PIL.Image as pil
 from PIL import Image
 from mde.data.utils import generate_depth_map, pil_loader
-
+from torchvision.transforms import v2
 
 class MonoDataset(data.Dataset):
     """Superclass for monocular dataloaders
@@ -38,8 +39,8 @@ class MonoDataset(data.Dataset):
     ):
         super(MonoDataset, self).__init__()
         self.normalise = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225]
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
         )
         self.data_path = data_path
         self.drive_directories = [f"{data_path.split('/')[-1]}_drive_{'{:04d}'.format(drive)}_sync" for drive in drives]
@@ -54,16 +55,16 @@ class MonoDataset(data.Dataset):
                             data_path,
                             drive_dir,
                             f'image_0{side}','data','*.jpg'
-                            )),
-                            key=lambda x: int(x.split('/')[-1].split('.')[0]
-                                )
-                            )
+                        )
+                    ),
+                    key=lambda x: int(x.split('/')[-1].split('.')[0])
+                )
                 self.frames.extend(self.filenames[drive_dir][side]) 
         self.height = height
         self.width = width
         self.num_scales = num_scales
         self.interp = pil.LANCZOS
-
+        self.item=[]
         self.frame_idxs = frame_idxs
 
         self.is_train = is_train
@@ -96,6 +97,7 @@ class MonoDataset(data.Dataset):
             )
 
         self.load_depth = self.check_depth()
+        
 
     def preprocess(self, inputs,color_proc, color_aug):
         """Resize colour images to the required scales and augment if required
@@ -118,11 +120,14 @@ class MonoDataset(data.Dataset):
                 inputs[(n, im, i)] = color_proc(f)
                 inputs[(n + "_aug", im, i)] = color_aug(f)
                 # inputs[(n + "_aug", im, i)] = self.normalise(torch.as_tensor(np.array(color_aug(f),dtype=float)))
-
+        return inputs
+    
     def __len__(self):
-        return len(self.filenames)
+        return len(self.frames)
 
     def __getitem__(self, index):
+        return self.prepare_frame(index)
+        # return self.item[index]
         """Returns a single training item from the dataset as a dictionary.
 
         Values correspond to torch tensors.
@@ -146,78 +151,7 @@ class MonoDataset(data.Dataset):
             2       images resized to (self.width // 4, self.height // 4)
             3       images resized to (self.width // 8, self.height // 8)
         """
-        inputs = {}
-
-        do_color_aug = self.is_train and random.random() > 0.5
-        do_flip = self.is_train and random.random() > 0.5
-
-        path = self.frames[index].split('/')
-        folder = path[-4]
-
-        if len(path) == 3:
-            frame_index = int(path[-1].replace('.jpg',''))
-        else:
-            frame_index = 0
-
-        side = str(int(path[-3].split('_')[-1]))
-        for i in self.frame_idxs:
-            
-            inputs[("color", frame_index+i, -1)] = self.get_color(
-                index,do_flip
-            )
-            
-
-        # adjusting intrinsics to match each scale in the pyramid
-        for scale in range(self.num_scales):
-            K = self.K.copy()
-
-            K[0, :] *= self.width // (2**scale)
-            K[1, :] *= self.height // (2**scale)
-
-            inv_K = np.linalg.pinv(K)
-
-            inputs[("K", scale)] = torch.Tensor(K)
-            inputs[("inv_K", scale)] = torch.Tensor(inv_K)
-
-        # if do_color_aug:
-        color_proc=transforms.Compose([
-            transforms.PILToTensor(),
-            transforms.ConvertImageDtype(torch.float),
-
-        ])
-        color_aug= transforms.Compose([
-            transforms.PILToTensor(),
-            transforms.ColorJitter(self.brightness, self.contrast, self.saturation, self.hue),
-            transforms.ConvertImageDtype(torch.float),
-
-        ])
-
-       
-        # else:
-        #     color_aug = lambda x: x
-
-        self.preprocess(inputs,color_proc, color_aug)
-
-        for i in self.frame_idxs:
-            del inputs[("color", frame_index+i, -1)]
-            del inputs[("color_aug", frame_index+i, -1)]
-
-        if self.load_depth:
-            depth_gt = self.get_depth(folder, frame_index, side, do_flip)
-            inputs["depth_gt"] = np.expand_dims(depth_gt, 0)
-            inputs["depth_gt"] = torch.from_numpy(inputs["depth_gt"].astype(np.float32))
-
-        if "s" in self.frame_idxs:
-            stereo_T = np.eye(4, dtype=np.float32)
-            baseline_sign = -1 if do_flip else 1
-            side_sign = -1 if side == "l" else 1
-            stereo_T[0, 3] = side_sign * baseline_sign * 0.1
-
-            inputs["stereo_T"] = torch.from_numpy(stereo_T)
-        if self.is_train:
-            return inputs[("color_aug", 0, 0)],inputs["depth_gt"]
-        else:
-            return inputs[("color", 0, 0)],inputs["depth_gt"]
+        
 
     def get_color(self, index):
         raise NotImplementedError
@@ -245,7 +179,7 @@ class KITTIDataset(MonoDataset):
             dtype=np.float32,
         )
 
-        self.full_res_shape = (332, 100)
+        self.full_res_shape = (332,100)
         self.side_map = {"2": 2, "3": 3, "l": 2, "r": 3}
 
     def check_depth(self):
@@ -264,8 +198,9 @@ class KITTIDataset(MonoDataset):
     def get_color(self, index,do_flip):
         color = self.loader(self.frames[index])
         color=color.resize(self.full_res_shape)
-        if do_flip:
-            color = color.transpose(pil.FLIP_LEFT_RIGHT)
+
+        # if do_flip:
+        #     color = color.transpose(pil.FLIP_LEFT_RIGHT)
 
         return color
 
@@ -275,7 +210,10 @@ class KITTIRAWDataset(KITTIDataset):
 
     def __init__(self, *args, **kwargs):
         super(KITTIRAWDataset, self).__init__(*args, **kwargs)
-
+        with Pool(20) as pool:
+            for result in pool.map(self.prepare_frame, range(len(self.frames))):
+                self.item.append( result)
+            
     def get_image_path(self, folder, frame_index, side):
         return self.filenames[folder][side][frame_index]
 
@@ -287,7 +225,6 @@ class KITTIRAWDataset(KITTIDataset):
             folder,
             "velodyne_points/data/{:010d}.bin".format(int(frame_index)),
         )
-
         depth_gt = generate_depth_map(calib_path, velo_filename, self.side_map[side])
         depth_gt = skimage.transform.resize(
             depth_gt,
@@ -297,11 +234,89 @@ class KITTIRAWDataset(KITTIDataset):
             mode="constant",
         )
 
-        if do_flip:
-            depth_gt = np.fliplr(depth_gt)
+        # if do_flip:
+        #     depth_gt = np.fliplr(depth_gt)
 
-        return depth_gt
+        return (depth_gt)
+    def prepare_frame(self,index):
+        inputs = {}
 
+        do_color_aug = self.is_train and random.random() > 0.5
+        do_flip = self.is_train and random.random() > 0.5
+        path = self.frames[index].split('/')
+        folder = path[-4]
+
+    
+        frame_index = int(path[-1].replace('.jpg',''))
+        
+
+        side = str(int(path[-3].split('_')[-1]))
+        for i in self.frame_idxs:
+            
+            inputs[("color", frame_index+i, -1)] = self.get_color(
+                index,do_flip
+            )
+            
+
+        # adjusting intrinsics to match each scale in the pyramid
+        for scale in range(self.num_scales):
+            K = self.K.copy()
+
+            K[0, :] *= self.width // (2**scale)
+            K[1, :] *= self.height // (2**scale)
+
+            inv_K = np.linalg.pinv(K)
+
+            inputs[("K", scale)] = torch.Tensor(K)
+            inputs[("inv_K", scale)] = torch.Tensor(inv_K)
+
+        # if do_color_aug:
+        color_proc=transforms.Compose([
+            transforms.PILToTensor(),
+            transforms.ConvertImageDtype(torch.float32),
+            # transforms.Normalize(
+            #     mean=[0.485, 0.456, 0.406],
+            #     std=[0.229, 0.224, 0.225]
+            #     )
+        ])
+        color_aug= transforms.Compose([
+            transforms.PILToTensor(),
+            transforms.ColorJitter(self.brightness, self.contrast, self.saturation, self.hue),
+            transforms.ConvertImageDtype(torch.float32),
+            # transforms.Normalize(
+            #     mean=[0.485, 0.456, 0.406],
+            #     std=[0.229, 0.224, 0.225]
+            #     )
+
+        ])
+
+       
+        # else:
+        #     color_aug = lambda x: x
+
+        inputs=self.preprocess(inputs,color_proc, color_aug)
+
+        for i in self.frame_idxs:
+            del inputs[("color", frame_index+i, -1)]
+            del inputs[("color_aug", frame_index+i, -1)]
+
+        if self.load_depth:
+            depth_gt = self.get_depth(folder, frame_index, side, do_flip)
+            inputs["depth_gt"] = np.expand_dims(depth_gt, 0)
+            f=torch.from_numpy(inputs["depth_gt"].astype(np.float32))
+            inputs["depth_gt"] = f# torch.concat([f,f,f],dim=0)
+
+        if "s" in self.frame_idxs:
+            stereo_T = np.eye(4, dtype=np.float32)
+            baseline_sign = -1 if do_flip else 1
+            side_sign = -1 if side == "l" else 1
+            stereo_T[0, 3] = side_sign * baseline_sign * 0.1
+
+            inputs["stereo_T"] = torch.from_numpy(stereo_T)
+        if self.is_train:
+            return inputs[("color_aug", frame_index, 0)],inputs["depth_gt"]
+        else:
+            return inputs[("color", frame_index, 0)],inputs["depth_gt"]
 
 # class KITTIOdomDataset(KITTIDataset):
 #     """KITTI dataset for odometry training and testing"""

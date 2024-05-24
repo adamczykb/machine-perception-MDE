@@ -8,5 +8,5 @@ if __name__ == "__main__":
         config = ConfigParser().read(sys.argv[1])
     else:
         config = ConfigParser().read("/app/config.yml")
-    download_archive(config)
+    # download_archive(config)
     extract_archive(config)

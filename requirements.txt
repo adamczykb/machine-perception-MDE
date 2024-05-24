@@ -4,4 +4,8 @@ requests==2.31.0
 scikit-image==0.23.2
 matplotlib==3.8.4
 lightning==2.2.4
-pytorch_ignite==0.5.0
+pytorch_ignite==0.5.0.post2
+pytorch-msssim==1.0.0
+jupyterlab==4.2.1 
+jupyter-contrib-nbextensions==0.7.0
+ipympl==0.9.4
