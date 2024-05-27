@@ -210,9 +210,9 @@ class KITTIRAWDataset(KITTIDataset):
 
     def __init__(self, *args, **kwargs):
         super(KITTIRAWDataset, self).__init__(*args, **kwargs)
-        with Pool(20) as pool:
-            for result in pool.map(self.prepare_frame, range(len(self.frames))):
-                self.item.append( result)
+        # with Pool(20) as pool:
+        #     for result in pool.map(self.prepare_frame, range(len(self.frames))):
+        #         self.item.append( result)
             
     def get_image_path(self, folder, frame_index, side):
         return self.filenames[folder][side][frame_index]
@@ -314,6 +314,10 @@ class KITTIRAWDataset(KITTIDataset):
 
             inputs["stereo_T"] = torch.from_numpy(stereo_T)
         if self.is_train:
+            if random.random() > 0.5:
+                return torch.flip(inputs[("color_aug", frame_index, 0)],[1]),torch.flip(inputs["depth_gt"],[1,2])
+            if random.random() > 0.5:
+                return torch.flip(inputs[("color_aug", frame_index, 0)],[2]),torch.flip(inputs["depth_gt"],[1,2])
             return inputs[("color_aug", frame_index, 0)],inputs["depth_gt"]
         else:
             return inputs[("color", frame_index, 0)],inputs["depth_gt"]

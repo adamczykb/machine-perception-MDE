@@ -9,3 +9,4 @@ pytorch-msssim==1.0.0
 jupyterlab==4.2.1 
 jupyter-contrib-nbextensions==0.7.0
 ipympl==0.9.4
+tensorboard==2.16.2
