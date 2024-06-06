@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.3.0-runtime-ubuntu22.04
+FROM nvidia/cuda:12.0.0-runtime-ubuntu22.04
 
 RUN apt-get update -y && apt-get upgrade -y
 
