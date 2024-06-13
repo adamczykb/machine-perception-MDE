@@ -32,10 +32,10 @@ class MDE(L.LightningModule):
     def compute_reprojection_loss(self, pred, target):
         """Computes reprojection loss between a batch of predicted and target images
         """
-        l1_loss = torch.mean(torch.abs(target- pred.where(target!=0,torch.tensor(0.0))),1)
-        # l2_loss = self.mseLoss(target, pred.where(target!=0,torch.tensor(0.0)))
+        # l1_loss = torch.mean(torch.abs(target- pred.where(target!=0,torch.tensor(0.0))),1)
+        l2_loss = self.mseLoss(target, pred.where(target!=0,torch.tensor(0.0)))
         ssim_loss=1-ssim(pred.where(target!=0,torch.tensor(0.0)), target)
-        loss = 0.6 * ssim_loss + 0.65 * l1_loss
+        loss = 0.6 * ssim_loss + 0.65 * l2_loss
 
         return torch.mean(loss)
 
@@ -63,7 +63,7 @@ class MDE(L.LightningModule):
         self.manual_backward(errG)
         g_opt.step()
 
-        self.log_dict({"g_loss": errG, "d_loss":0}, prog_bar=True)
+        self.log_dict({"g_loss": errG}, prog_bar=True)
 
     def validation_step(self, batch, batch_idx):
         # training_step defines the train loop.
@@ -75,12 +75,12 @@ class MDE(L.LightningModule):
 
         g_loss = self.generator_loss( z, y)
 
-        self.log_dict({"g_val_loss": g_loss, "d_val_loss": 0}, prog_bar=True)
+        self.log_dict({"g_val_loss": g_loss}, prog_bar=True)
         return g_loss
 
         
     def configure_optimizers(self):
-        g_opt = torch.optim.Adam(self.mde_unet.parameters(), lr=1e-6)
+        g_opt = torch.optim.Adam(self.mde_unet.parameters(), lr=1e-5)
         return g_opt
 
 class MyCallback(L.Callback):

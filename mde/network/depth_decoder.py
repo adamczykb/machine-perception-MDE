@@ -265,5 +265,5 @@ class MDEModel(nn.Module):
         # x=self.fup1(x)
         # x=self.fup2(x)
         # x = F.interpolate(x, scale_factor=, mode="nearest")
-        # x=F.tanh(x)
+        x=self.lrelu(x)
         return x

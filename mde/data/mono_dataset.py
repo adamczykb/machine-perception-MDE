@@ -254,11 +254,23 @@ class KITTIRAWDataset(KITTIDataset):
 
         color_aug= A.Compose(transforms=[
             A.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=0.5),
-            A.AdvancedBlur(always_apply=False, p=1.0, blur_limit=(3, 7), sigma_x_limit=(0.2, 1.0), sigma_y_limit=(1.22, 3.96), rotate_limit=(-90, 90), beta_limit=(0.5, 8.0), noise_limit=(0.9, 1.1)),                              
+            A.AdvancedBlur(always_apply=False, p=1.0, 
+                           blur_limit=(3, 7), sigma_x_limit=(0.2, 1.0), 
+                           sigma_y_limit=(1.22, 3.96), rotate_limit=(-90, 90), 
+                           beta_limit=(0.5, 8.0), noise_limit=(0.9, 1.1)),                              
             A.MultiplicativeNoise(always_apply=False, p=1.0, multiplier=(0.9, 1.1), per_channel=True, elementwise=True),
             A.RandomBrightnessContrast(p=0.5),
         ])
-        
+        train_dataset_augmented_transform = A.Compose(
+            transforms=[
+                A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=15, p=0.6),
+                A.RandomCrop(height=100, width=100),
+                A.HorizontalFlip(p=0.5),
+                A.VerticalFlip(p=0.5),
+            ],
+            is_check_shapes=False,
+            additional_targets={'image0': 'image'}
+        )  
         color_normalise= A.Compose(transforms=[
             A.ToFloat(),
             # A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
@@ -270,14 +282,7 @@ class KITTIRAWDataset(KITTIDataset):
                 ToTensorV2()
             ]
         )
-        train_dataset_augmented_transform = A.Compose(
-            transforms=[
-                A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=15, p=0.6),
-                A.RandomCrop(height=100, width=100),
-            ],
-            is_check_shapes=False,
-            additional_targets={'image0': 'image'}
-        )     
+           
 
         # for i in self.frame_idxs:
         #     del inputs[("color", frame_index+i, -1)]
